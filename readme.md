@@ -297,4 +297,4 @@ public function index()
 ~~~
 
 - 動作確認
-MySQLでもsqliteでもうまく動作した！
+MySQLでもsqliteでもうまく動作した！なお，created_at についても，投稿時はMySQL, sqlite ともに自動的に設定された．
