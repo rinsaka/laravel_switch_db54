@@ -10,6 +10,6 @@ class CommentsController extends Controller
   public function index()
   {
     $comments = Comment::get();
-    dd($comments);
+    dd(env("DB_CONNECTION"), $comments);
   }
 }
