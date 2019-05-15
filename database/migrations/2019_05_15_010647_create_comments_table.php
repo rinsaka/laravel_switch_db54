@@ -18,14 +18,18 @@ class CreateCommentsTable extends Migration
             $table->string('comment');
             $table->timestamps();
 
-            $table->engine = 'Mroonga';
+            if (env("DB_CONNECTION") == 'mysql') {
+              $table->engine = 'Mroonga';
+            }
         });
 
-        // ストレージエンジンをMroongaのラッパーモードに変更する
-        DB::statement("ALTER TABLE comments engine=Mroonga COMMENT ='engine \"InnoDB\"' DEFAULT CHARSET=utf8");
+        if (env("DB_CONNECTION") == 'mysql') {
+          // ストレージエンジンをMroongaのラッパーモードに変更する
+          DB::statement("ALTER TABLE comments engine=Mroonga COMMENT ='engine \"InnoDB\"' DEFAULT CHARSET=utf8");
 
-        // フルテキストインデックスを追加
-        DB::statement('ALTER TABLE comments ADD FULLTEXT index_comment_on_comments(`comment`)');
+          // フルテキストインデックスを追加
+          DB::statement('ALTER TABLE comments ADD FULLTEXT index_comment_on_comments(`comment`)');
+        }
     }
 
     /**
