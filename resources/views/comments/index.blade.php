@@ -5,6 +5,9 @@
     <title>コメント一覧</title>
 </head>
 <body>
+    <p>
+      接続先データベース： {{ $connection }}
+    </p>
     <h1>コメント一覧</h1>
     <ul>
         @foreach ($comments as $comment)
