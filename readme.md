@@ -7,6 +7,10 @@
 <a href="https://packagist.org/packages/laravel/framework"><img src="https://poser.pugx.org/laravel/framework/license.svg" alt="License"></a>
 </p>
 
+## About this project
+
+Laravel のデータベースを sqlite と MySQL で切り替えられるように．特に MySQL では Mroonga ストレージエンジンを利用しているので，同じマイグレーションファイルでは sqlite の環境ではデータベースを作成できない．このプロジェクトは .env の環境変数を取り出してマイグレーションを調整するサンプルです．
+
 ## About Laravel
 
 Laravel is a web application framework with expressive, elegant syntax. We believe development must be an enjoyable, creative experience to be truly fulfilling. Laravel attempts to take the pain out of development by easing common tasks used in the majority of web projects, such as:
@@ -38,3 +42,259 @@ If you discover a security vulnerability within Laravel, please send an e-mail t
 ## License
 
 The Laravel framework is open-sourced software licensed under the [MIT license](http://opensource.org/licenses/MIT).
+
+
+
+# データベースを切り替えても動くように
+## MySQL と sqlite を .env で切り替える
+
+### まずは，sqlite で
+
+- .env を編集
+
+~~~
+DB_CONNECTION=sqlite
+# DB_CONNECTION=mysql
+# DB_HOST=127.0.0.1
+# DB_PORT=3306
+# DB_DATABASE=homestead
+# DB_USERNAME=homestead
+# DB_PASSWORD=secret
+~~~
+
+- データベースを作成
+~~~
+touch database/database.sqlite
+~~~
+
+- 不要なマイグレーションファイルを削除
+
+~~~
+rm 2014_10_12_000000_create_users_table.php
+rm 2014_10_12_100000_create_password_resets_table.php
+~~~
+
+- 適当なマイグレーションファイルを生成
+
+~~~
+php artisan make:migration create_comments_table --create=comments
+~~~
+
+- マイグレーションの内容
+
+~~~
+public function up()
+{
+    Schema::create('comments', function (Blueprint $table) {
+        $table->increments('id');
+        $table->string('comment');
+        $table->timestamps();
+    });
+}
+~~~
+
+- マイグレーション
+
+~~~
+php artisan migrate
+~~~
+
+- シーダーの設置
+
+~~~
+php artisan make:seeder CommentsTableSeeder
+php ../composer.phar dump-autoload
+~~~
+
+- DatabaseSeeder の内容
+
+~~~
+public function run()
+{
+  // $this->call(UsersTableSeeder::class);
+  $this->call(CommentsTableSeeder::class);
+}
+~~~
+
+- CommentsTableSeeder の内容
+
+~~~
+public function run()
+{
+  // 一旦中身を削除する
+  DB::table('comments')->delete();
+
+  DB::table('comments')->insert([
+      'comment' => '最初のコメント'
+  ]);
+
+  DB::table('comments')->insert([
+      'comment' => 'あいうえお'
+  ]);
+
+  DB::table('comments')->insert([
+      'comment' => 'かきくけこ'
+  ]);
+
+}
+~~~
+
+- Comment モデルと Comments コントローラを作る
+
+~~~
+php artisan make:model Comment
+php artisan make:controller CommentsController
+~~~
+
+- route を書く
+
+~~~
+Route::get('comments', 'CommentsController@index');
+~~~
+
+- CommentsController
+
+~~~
+<?php
+
+namespace App\Http\Controllers;
+
+use Illuminate\Http\Request;
+use App\Comment;
+
+class CommentsController extends Controller
+{
+  public function index()
+  {
+    $comments = Comment::get();
+    dd($comments);
+  }
+}
+~~~
+
+- server を起動する
+
+~~~
+php artisan serve --host 192.168.33.100 --port 8000
+~~~
+
+- 動作確認
+~~~
+http://192.168.33.100:8000/comments
+~~~
+
+
+### 次に MySQL で動くように
+
+- MySQL のデータベースを作成する
+
+~~~
+mysql -u root -p
+パスワードを入力
+CREATE DATABASE homestead;
+GRANT ALL on homestead.* TO homestead@localhost IDENTIFIED BY 'Secret.2018';
+exit
+~~~
+
+- マイグレーションを実行
+
+~~~
+php artisan migrate:status
+php artisan migrate
+php artisan migrate:status
+php artisan db:seed
+~~~
+
+- server を起動する
+
+~~~
+php artisan serve --host 192.168.33.100 --port 8000
+~~~
+
+- 動作確認
+
+~~~
+http://192.168.33.100:8000/comments
+~~~
+
+### MySQL 特有の機能を利用する
+
+- マイグレーションファイルを修正
+
+~~~
+public function up()
+{
+    Schema::create('comments', function (Blueprint $table) {
+        $table->increments('id');
+        $table->string('comment');
+        $table->timestamps();
+
+        $table->engine = 'Mroonga';
+    });
+
+    // ストレージエンジンをMroongaのラッパーモードに変更する
+    DB::statement("ALTER TABLE comments engine=Mroonga COMMENT ='engine \"InnoDB\"' DEFAULT CHARSET=utf8");
+
+    // フルテキストインデックスを追加
+    DB::statement('ALTER TABLE comments ADD FULLTEXT index_comment_on_comments(`comment`)');
+}
+~~~
+
+- マイグレーションを再度実行
+
+~~~
+php artisan migrate:status
+php artisan migrate:rollback
+php artisan migrate
+php artisan db:seed
+~~~
+
+- これでもよい
+
+~~~
+php artisan migrate:rollback; php artisan migrate; php artisan db:seed
+~~~
+
+- 動作確認
+MySQLでMroongaのインデックスが使えるようになった．ただし，.env で sqlite にすると，マイグレーションでエラーになる．これは想定通り．
+
+### .env の内容を取り出して処理する
+
+- マイグレーションファイルを変更する
+
+~~~
+public function up()
+{
+    Schema::create('comments', function (Blueprint $table) {
+        $table->increments('id');
+        $table->string('comment');
+        $table->timestamps();
+
+        if (env("DB_CONNECTION") == 'mysql') {
+          $table->engine = 'Mroonga';
+        }
+    });
+
+    if (env("DB_CONNECTION") == 'mysql') {
+      // ストレージエンジンをMroongaのラッパーモードに変更する
+      DB::statement("ALTER TABLE comments engine=Mroonga COMMENT ='engine \"InnoDB\"' DEFAULT CHARSET=utf8");
+
+      // フルテキストインデックスを追加
+      DB::statement('ALTER TABLE comments ADD FULLTEXT index_comment_on_comments(`comment`)');
+    }
+}
+~~~
+
+
+- CommentsController でも接続先データベースを表示する
+
+~~~
+public function index()
+{
+  $comments = Comment::get();
+  dd(env("DB_CONNECTION"), $comments);
+}
+~~~
+
+- 動作確認
+MySQLでもsqliteでもうまく動作した！
