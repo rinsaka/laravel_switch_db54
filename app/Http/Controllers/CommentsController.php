@@ -15,4 +15,16 @@ class CommentsController extends Controller
             ->with('comments', $comments)
             ->with('connection', $connection);
   }
+
+  public function store(Request $request)
+  {
+    $this->validate($request, [
+      'comment' => 'required|max:140'
+    ]);
+
+    $comment = new Comment();
+    $comment->comment = $request->comment;
+    $comment->save();
+    return redirect('/comments');
+  }
 }
